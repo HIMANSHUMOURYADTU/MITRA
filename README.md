@@ -1,16 +1,64 @@
-# mitra
+# Surveillance System using Flutter
 
-A new Flutter project.
+This is a **Flutter application** for a surveillance system that captures motion detection from a camera and alerts the user. The application is designed to provide real-time monitoring and alert notifications.
 
-## Getting Started
+## Features
 
-This project is a starting point for a Flutter application.
+- 📹 **Real-time Video PLayback**: Displays live videos we select from storage.
+- ⚠️ **Motion Detection**: Detects motion and triggers alerts.
+- 
+- 🛡️ **Secure System**: Ensures secure and private surveillance.
 
-A few resources to get you started if this is your first Flutter project:
+## Technologies Used
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+- **Flutter** - Frontend framework.
+- **Dart** - Programming language for Flutter.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/HIMANSHUMOURYADTU/MITRA.git
+   cd surveillance-system
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   flutter pub get
+   ```
+
+3. **Run the app:**
+   ```bash
+   flutter run
+   ```
+
+## Usage
+
+- Open the app on your device.
+- Grant camera and notification permissions.
+- Start monitoring by clicking the "Start Surveillance" button.
+- When motion is detected, you will receive an alert notification.
+- View captured footage in the logs section.
+
+## Folder Structure
+
+```
+lib
+│
+├── main.dart       # Entry point of the application
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
+## Contributing
+
+Contributions are welcome! Please fork the repository and submit a pull request.
+
+## Contact
+
+- **Developer:** Himanshu Mourya
+- **Email:** your-email@example.com
+- **GitHub:** [Your GitHub Profile](https://github.com/your-username)
+
+Feel free to modify or expand the app according to your needs!
