@@ -3,7 +3,7 @@ import 'package:noise_meter/noise_meter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart'; // Add this
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -16,67 +16,77 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: SoundMeterScreen(),
+    return MaterialApp(
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      home: const MonitorScreen(),
     );
   }
 }
 
-class SoundMeterScreen extends StatefulWidget {
-  const SoundMeterScreen({super.key});
+class MonitorScreen extends StatefulWidget {
+  const MonitorScreen({super.key});
 
   @override
-  State<SoundMeterScreen> createState() => _SoundMeterScreenState();
+  State<MonitorScreen> createState() => _MonitorScreenState();
 }
 
-class _SoundMeterScreenState extends State<SoundMeterScreen> {
+class _MonitorScreenState extends State<MonitorScreen> {
   late NoiseMeter noiseMeter;
   StreamSubscription<NoiseReading>? noiseSubscription;
+  StreamSubscription<Position>? positionSubscription;
   VideoPlayerController? videoController;
 
-  double orangeFrequency = 500.0;
-  double redFrequency = 1000.0;
+  // Noise variables
+  double orangeFrequency = 50.0;
+  double redFrequency = 80.0;
   double currentFrequency = 0.0;
-
-  String filePath = "No File Selected";
   bool isListening = false;
+
+  // Speed variables
+  double orangeSpeed = 5.0;
+  double redSpeed = 10.0;
+  double currentSpeed = 0.0;
+  bool isTracking = false;
+
+  // Shared variables
+  String noiseFilePath = "No File Selected"; // For noise video
+  String speedFilePath = "No File Selected"; // For speed video
   bool isVideoPlaying = false;
   DateTime? lastVideoCloseTime;
-
-  String parentMenu = "Parent";
-  String childMenu1 = "Child";
-
   static const int videoDelaySeconds = 3;
+
+  // Drawer variables (New)
+  String parentName = "Parent";
+  String childName = "Child";
 
   @override
   void initState() {
     super.initState();
     noiseMeter = NoiseMeter();
-    _checkPermissions(); // Check permissions on init
+    _checkPermissions();
   }
 
-  Future<bool> _checkPermissions() async {
-    // Check and request microphone permission
-    var status = await Permission.microphone.status;
-    if (!status.isGranted) {
-      status = await Permission.microphone.request();
-      if (!status.isGranted) {
-        debugPrint("Microphone permission denied");
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Microphone permission is required to measure noise.")),
-        );
-        return false;
-      }
+  Future<void> _checkPermissions() async {
+    var micStatus = await Permission.microphone.status;
+    if (!micStatus.isGranted) {
+      micStatus = await Permission.microphone.request();
+      if (!micStatus.isGranted) debugPrint("Microphone permission denied");
     }
-    debugPrint("Microphone permission granted");
-    return true;
+
+    LocationPermission locPermission = await Geolocator.checkPermission();
+    if (locPermission == LocationPermission.denied) {
+      locPermission = await Geolocator.requestPermission();
+      if (locPermission == LocationPermission.denied) debugPrint("Location permission denied");
+    }
   }
 
   void startListening() async {
     if (isListening) return;
-
-    // Ensure permissions are granted before starting
-    bool hasPermission = await _checkPermissions();
+    stopTracking();
+    bool hasPermission = await Permission.microphone.isGranted;
     if (!hasPermission) return;
 
     setState(() {
@@ -85,25 +95,20 @@ class _SoundMeterScreenState extends State<SoundMeterScreen> {
     });
 
     try {
-      noiseSubscription = NoiseMeter().noise.listen((NoiseReading noiseReading) {
+      noiseSubscription = noiseMeter.noise.listen((NoiseReading noiseReading) {
         setState(() {
           currentFrequency = noiseReading.meanDecibel;
-          debugPrint("Current frequency: $currentFrequency dB"); // Debug output
-          if (currentFrequency >= redFrequency &&
-              filePath != "No File Selected" &&
-              !isVideoPlaying) {
+          if (currentFrequency >= redFrequency && noiseFilePath != "No File Selected" && !isVideoPlaying) {
             if (lastVideoCloseTime == null ||
                 DateTime.now().difference(lastVideoCloseTime!).inSeconds >= videoDelaySeconds) {
-              showVideoDialog(context);
+              showVideoDialog(context, noiseFilePath);
             }
           }
         });
-      }, onError: onError);
+      }, onError: (e) => debugPrint("Noise error: $e"));
     } catch (e) {
       debugPrint("Error starting noise meter: $e");
-      setState(() {
-        isListening = false;
-      });
+      setState(() => isListening = false);
     }
   }
 
@@ -113,45 +118,66 @@ class _SoundMeterScreenState extends State<SoundMeterScreen> {
       isListening = false;
       currentFrequency = 0.0;
     });
-    if (!isVideoPlaying) {
-      videoController?.dispose();
-      videoController = null;
-    }
-    debugPrint("Stopped listening");
   }
 
-  Future<void> showVideoDialog(BuildContext context) async {
+  void startTracking() async {
+    if (isTracking) return;
+    stopListening();
+    await _checkPermissions();
+
+    setState(() {
+      isTracking = true;
+      currentSpeed = 0.0;
+    });
+
+    positionSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 1),
+    ).listen((Position position) {
+      setState(() {
+        currentSpeed = position.speed;
+        if (currentSpeed >= redSpeed && speedFilePath != "No File Selected" && !isVideoPlaying) {
+          if (lastVideoCloseTime == null ||
+              DateTime.now().difference(lastVideoCloseTime!).inSeconds >= videoDelaySeconds) {
+            showVideoDialog(context, speedFilePath);
+          }
+        }
+      });
+    }, onError: (e) => debugPrint("Speed error: $e"));
+  }
+
+  void stopTracking() {
+    positionSubscription?.cancel();
+    setState(() {
+      isTracking = false;
+      currentSpeed = 0.0;
+    });
+  }
+
+  Future<void> showVideoDialog(BuildContext context, String videoPath) async {
     if (isVideoPlaying) return;
 
     videoController?.dispose();
-    videoController = VideoPlayerController.file(File(filePath));
+    videoController = VideoPlayerController.file(File(videoPath));
 
     try {
       await videoController!.initialize();
       if (!mounted) return;
 
-      setState(() {
-        isVideoPlaying = true;
-      });
+      setState(() => isVideoPlaying = true);
 
       await showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (BuildContext dialogContext) {
+        builder: (dialogContext) {
           videoController!.play();
           videoController!.setLooping(true);
 
           return WillPopScope(
             onWillPop: () async => false,
             child: AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AspectRatio(
-                    aspectRatio: videoController!.value.aspectRatio,
-                    child: VideoPlayer(videoController!),
-                  ),
-                ],
+              content: AspectRatio(
+                aspectRatio: videoController!.value.aspectRatio,
+                child: VideoPlayer(videoController!),
               ),
               actions: [
                 TextButton(
@@ -173,7 +199,7 @@ class _SoundMeterScreenState extends State<SoundMeterScreen> {
         },
       );
     } catch (e) {
-      debugPrint("Video player error: $e");
+      debugPrint("Video error: $e");
       setState(() {
         isVideoPlaying = false;
         lastVideoCloseTime = DateTime.now();
@@ -183,49 +209,46 @@ class _SoundMeterScreenState extends State<SoundMeterScreen> {
     }
   }
 
-  Future<void> pickFile() async {
+  Future<void> pickFile(bool isForNoise) async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.video);
     if (result != null) {
       setState(() {
-        filePath = result.files.single.path ?? "No File Selected";
+        if (isForNoise) {
+          noiseFilePath = result.files.single.path ?? "No File Selected";
+        } else {
+          speedFilePath = result.files.single.path ?? "No File Selected";
+        }
       });
     }
-  }
-
-  void onError(Object error) {
-    debugPrint("Noise meter error: $error");
-    setState(() {
-      isListening = false;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Error with noise meter: $error")),
-    );
   }
 
   @override
   void dispose() {
     stopListening();
+    stopTracking();
+    videoController?.dispose();
     super.dispose();
   }
 
-  void showEditMenuDialog() {
-    TextEditingController parentController = TextEditingController(text: parentMenu);
-    TextEditingController childController = TextEditingController(text: childMenu1);
+  // New method to show dialog for editing names
+  void _showEditNamesDialog() {
+    TextEditingController parentController = TextEditingController(text: parentName);
+    TextEditingController childController = TextEditingController(text: childName);
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Edit Menu Items"),
+        title: const Text("Edit Names"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: parentController,
-              decoration: const InputDecoration(labelText: "Parent"),
+              decoration: const InputDecoration(labelText: "Parent Name"),
             ),
             TextField(
               controller: childController,
-              decoration: const InputDecoration(labelText: "Child"),
+              decoration: const InputDecoration(labelText: "Child Name"),
             ),
           ],
         ),
@@ -233,12 +256,16 @@ class _SoundMeterScreenState extends State<SoundMeterScreen> {
           TextButton(
             onPressed: () {
               setState(() {
-                parentMenu = parentController.text;
-                childMenu1 = childController.text;
+                parentName = parentController.text.isNotEmpty ? parentController.text : "Parent";
+                childName = childController.text.isNotEmpty ? childController.text : "Child";
               });
               Navigator.pop(context);
             },
             child: const Text("Save"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
           ),
         ],
       ),
@@ -248,115 +275,255 @@ class _SoundMeterScreenState extends State<SoundMeterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("MITRA")),
+      appBar: AppBar(
+        title: const Text("MITRA"),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(colors: [Colors.blue, Colors.purple]),
+          ),
+        ),
+      ),
       drawer: Drawer(
         child: ListView(
+          padding: EdgeInsets.zero,
           children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.blue),
-              child: Text("Menu", style: TextStyle(color: Colors.white, fontSize: 24)),
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(colors: [Colors.blue, Colors.purple]),
+              ),
+              child: const Text(
+                "Menu",
+                style: TextStyle(color: Colors.white, fontSize: 24),
+              ),
             ),
             ListTile(
-              title: Text(parentMenu),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              title: Text(childMenu1),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              title: const Text("Edit Menu"),
+              leading: const Icon(Icons.person),
+              title: Text(parentName),
               onTap: () {
-                Navigator.pop(context);
-                showEditMenuDialog();
+                Navigator.pop(context); // Close drawer
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.child_care),
+              title: Text(childName),
+              onTap: () {
+                Navigator.pop(context); // Close drawer
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text("Edit Names"),
+              onTap: () {
+                Navigator.pop(context); // Close drawer
+                _showEditNamesDialog(); // Show edit dialog
               },
             ),
           ],
         ),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              "Current Frequency: ${currentFrequency.toStringAsFixed(1)} dB",
-              style: TextStyle(
-                color: currentFrequency >= redFrequency
-                    ? Colors.red
-                    : currentFrequency >= orangeFrequency
-                        ? Colors.orange
-                        : Colors.green,
-                fontSize: 20,
+            // Noise Section
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Text(
+                      "Noise Monitor",
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.blue),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      "Current Frequency: ${currentFrequency.toStringAsFixed(1)} dB",
+                      style: TextStyle(
+                        color: currentFrequency >= redFrequency
+                            ? Colors.red
+                            : currentFrequency >= orangeFrequency
+                                ? Colors.orange
+                                : Colors.green,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSlider(
+                      "Orange Level",
+                      orangeFrequency,
+                      0,
+                      20000,
+                      (value) {
+                        setState(() {
+                          orangeFrequency = value;
+                          if (orangeFrequency >= redFrequency) redFrequency = orangeFrequency + 1000;
+                        });
+                      },
+                      "Hz",
+                    ),
+                    _buildSlider(
+                      "Red Level",
+                      redFrequency,
+                      0,
+                      20000,
+                      (value) {
+                        setState(() {
+                          redFrequency = value;
+                          if (redFrequency <= orangeFrequency) orangeFrequency = redFrequency - 1000;
+                        });
+                      },
+                      "Hz",
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: startListening,
+                          icon: const Icon(Icons.mic),
+                          label: const Text("Start"),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: stopListening,
+                          icon: const Icon(Icons.stop),
+                          label: const Text("Stop"),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
-              "Orange Level",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            Slider(
-              value: orangeFrequency,
-              min: 0,
-              max: 20000,
-              divisions: 10,
-              label: "Orange: ${orangeFrequency.toInt()} Hz",
-              onChanged: (value) {
-                setState(() {
-                  orangeFrequency = value;
-                  if (orangeFrequency >= redFrequency) redFrequency = orangeFrequency + 1;
-                });
-              },
-            ),
-            const Text(
-              "Red Level",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            Slider(
-              value: redFrequency,
-              min: 0,
-              max: 20000,
-              divisions: 10,
-              label: "Red: ${redFrequency.toInt()} Hz",
-              onChanged: (value) {
-                setState(() {
-                  redFrequency = value;
-                  if (redFrequency <= orangeFrequency) orangeFrequency = redFrequency - 1;
-                });
-              },
-            ),
-            ElevatedButton(
-              onPressed: startListening,
-              child: const Text("Start Listening"),
-            ),
-            ElevatedButton(
-              onPressed: stopListening,
-              child: const Text("Stop Listening"),
-            ),
-            ElevatedButton(
-              onPressed: pickFile,
-              child: const Text("Select File"),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SpeedScreen()),
-                );
-              },
-              child: const Text("Speed"),
+
+            // Speed Section
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Text(
+                      "Speed Monitor",
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.blue),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      "Current Speed: ${currentSpeed.toStringAsFixed(1)} m/s",
+                      style: TextStyle(
+                        color: currentSpeed >= redSpeed
+                            ? Colors.red
+                            : currentSpeed >= orangeSpeed
+                                ? Colors.orange
+                                : Colors.green,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSlider(
+                      "Orange Level",
+                      orangeSpeed,
+                      0,
+                      50,
+                      (value) {
+                        setState(() {
+                          orangeSpeed = value;
+                          if (orangeSpeed >= redSpeed) redSpeed = orangeSpeed + 1;
+                        });
+                      },
+                      "m/s",
+                    ),
+                    _buildSlider(
+                      "Red Level",
+                      redSpeed,
+                      0,
+                      50,
+                      (value) {
+                        setState(() {
+                          redSpeed = value;
+                          if (redSpeed <= orangeSpeed) orangeSpeed = redSpeed - 1;
+                        });
+                      },
+                      "m/s",
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: startTracking,
+                          icon: const Icon(Icons.speed),
+                          label: const Text("Start"),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: stopTracking,
+                          icon: const Icon(Icons.stop),
+                          label: const Text("Stop"),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(8.0),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey),
-                borderRadius: BorderRadius.circular(4.0),
-              ),
-              child: Text(
-                "Selected File: $filePath",
-                style: const TextStyle(fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
+
+            // File Picker Section
+            Card(
+              elevation: 4,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () => pickFile(true),
+                          child: const Text("Noise Video"),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => pickFile(false),
+                          child: const Text("Speed Video"),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(8.0),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey),
+                        borderRadius: BorderRadius.circular(4.0),
+                      ),
+                      child: Column(
+                        children: [
+                          Text(
+                            "Noise Video: $noiseFilePath",
+                            style: const TextStyle(fontSize: 16),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            "Speed Video: $speedFilePath",
+                            style: const TextStyle(fontSize: 16),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -364,253 +531,29 @@ class _SoundMeterScreenState extends State<SoundMeterScreen> {
       ),
     );
   }
-}
 
-// SpeedScreen (unchanged for brevity, assume it remains as is)
-class SpeedScreen extends StatefulWidget {
-  const SpeedScreen({super.key});
-
-  @override
-  State<SpeedScreen> createState() => _SpeedScreenState();
-}
-
-class _SpeedScreenState extends State<SpeedScreen> {
-  StreamSubscription<Position>? positionSubscription;
-  VideoPlayerController? videoController;
-
-  double orangeSpeed = 5.0;
-  double redSpeed = 10.0;
-  double currentSpeed = 0.0;
-
-  String filePath = "No File Selected";
-  bool isTracking = false;
-  bool isVideoPlaying = false;
-  DateTime? lastVideoCloseTime;
-
-  static const int videoDelaySeconds = 3;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkPermissions();
-  }
-
-  Future<void> _checkPermissions() async {
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        debugPrint("Location permissions denied");
-        return;
-      }
-    }
-    if (permission == LocationPermission.deniedForever) {
-      debugPrint("Location permissions denied forever");
-      return;
-    }
-  }
-
-  void startTracking() async {
-    if (isTracking) return;
-    await _checkPermissions();
-    setState(() {
-      isTracking = true;
-      currentSpeed = 0.0;
-    });
-
-    positionSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 1,
-      ),
-    ).listen((Position position) {
-      setState(() {
-        currentSpeed = position.speed;
-        if (currentSpeed >= redSpeed &&
-            filePath != "No File Selected" &&
-            !isVideoPlaying) {
-          if (lastVideoCloseTime == null ||
-              DateTime.now().difference(lastVideoCloseTime!).inSeconds >= videoDelaySeconds) {
-            showVideoDialog(context);
-          }
-        }
-      });
-    }, onError: (e) => debugPrint("Speed tracking error: $e"));
-  }
-
-  void stopTracking() {
-    positionSubscription?.cancel();
-    setState(() {
-      isTracking = false;
-      currentSpeed = 0.0;
-    });
-    if (!isVideoPlaying) {
-      videoController?.dispose();
-      videoController = null;
-    }
-  }
-
-  Future<void> showVideoDialog(BuildContext context) async {
-    if (isVideoPlaying) return;
-
-    videoController?.dispose();
-    videoController = VideoPlayerController.file(File(filePath));
-
-    try {
-      await videoController!.initialize();
-      if (!mounted) return;
-
-      setState(() {
-        isVideoPlaying = true;
-      });
-
-      await showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (BuildContext dialogContext) {
-          videoController!.play();
-          videoController!.setLooping(true);
-
-          return WillPopScope(
-            onWillPop: () async => false,
-            child: AlertDialog(
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  AspectRatio(
-                    aspectRatio: videoController!.value.aspectRatio,
-                    child: VideoPlayer(videoController!),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    videoController?.pause();
-                    videoController?.dispose();
-                    setState(() {
-                      isVideoPlaying = false;
-                      lastVideoCloseTime = DateTime.now();
-                      videoController = null;
-                    });
-                    Navigator.pop(dialogContext);
-                  },
-                  child: const Text("Close"),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    } catch (e) {
-      debugPrint("Video player error: $e");
-      setState(() {
-        isVideoPlaying = false;
-        lastVideoCloseTime = DateTime.now();
-      });
-      videoController?.dispose();
-      videoController = null;
-    }
-  }
-
-  Future<void> pickFile() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.video);
-    if (result != null) {
-      setState(() {
-        filePath = result.files.single.path ?? "No File Selected";
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    stopTracking();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Speed Monitor")),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Text(
-              "Current Speed: ${currentSpeed.toStringAsFixed(1)} m/s",
-              style: TextStyle(
-                color: currentSpeed >= redSpeed
-                    ? Colors.red
-                    : currentSpeed >= orangeSpeed
-                        ? Colors.orange
-                        : Colors.green,
-                fontSize: 20,
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              "Orange Level",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            Slider(
-              value: orangeSpeed,
-              min: 0,
-              max: 50,
-              divisions: 50,
-              label: "Orange: ${orangeSpeed.toInt()} m/s",
-              onChanged: (value) {
-                setState(() {
-                  orangeSpeed = value;
-                  if (orangeSpeed >= redSpeed) redSpeed = orangeSpeed + 1;
-                });
-              },
-            ),
-            const Text(
-              "Red Level",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            Slider(
-              value: redSpeed,
-              min: 0,
-              max: 50,
-              divisions: 50,
-              label: "Red: ${redSpeed.toInt()} m/s",
-              onChanged: (value) {
-                setState(() {
-                  redSpeed = value;
-                  if (redSpeed <= orangeSpeed) orangeSpeed = redSpeed - 1;
-                });
-              },
-            ),
-            ElevatedButton(
-              onPressed: startTracking,
-              child: const Text("Start Tracking"),
-            ),
-            ElevatedButton(
-              onPressed: stopTracking,
-              child: const Text("Stop Tracking"),
-            ),
-            ElevatedButton(
-              onPressed: pickFile,
-              child: const Text("Select File"),
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(8.0),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey),
-                borderRadius: BorderRadius.circular(4.0),
-              ),
-              child: Text(
-                "Selected File: $filePath",
-                style: const TextStyle(fontSize: 16),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 2,
-              ),
-            ),
-          ],
+  Widget _buildSlider(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+    String unit,
+  ) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: (max - min).toInt(),
+          label: "$label: ${value.toInt()} $unit",
+          onChanged: onChanged,
+          activeColor: Colors.blue,
+          inactiveColor: Colors.grey,
         ),
-      ),
+      ],
     );
   }
 }
