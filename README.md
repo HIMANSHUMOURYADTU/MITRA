@@ -1,13 +1,13 @@
-# Surveillance System using Flutter
+# Alert System using Flutter
 
-This is a **Flutter application** for a surveillance system that captures motion detection from a camera and alerts the user. The application is designed to provide real-time monitoring and alert notifications.
+This is a **Flutter application** for a alert system that pops up windows ehn certain level of frequency or speed is reached . The application is designed to provide real-time monitoring and alert notifications.
 
 ## Features
 
-- 📹 **Real-time Video PLayback**: Displays live videos we select from storage.
-- ⚠️ **Motion Detection**: Detects motion and triggers alerts.
-- 
-- 🛡️ **Secure System**: Ensures secure and private surveillance.
+- 📹 **Real-time Video PLayback**: Displays live videos we select from storage to alert user .
+- ⚠️ **Motion Detection**: Detects sound, speed and triggers alerts.Orange and red level for detection red level is high threat or danger.Orange level is used to alert the risk of threat .
+- 🛡️ **Secured**: Only user can acess data.
+
 
 ## Technologies Used
 
@@ -19,7 +19,7 @@ This is a **Flutter application** for a surveillance system that captures motion
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/HIMANSHUMOURYADTU/MITRA.git
-   cd surveillance-system
+   cd mitra
    ```
 
 2. **Install dependencies:**
@@ -35,10 +35,13 @@ This is a **Flutter application** for a surveillance system that captures motion
 ## Usage
 
 - Open the app on your device.
-- Grant camera and notification permissions.
-- Start monitoring by clicking the "Start Surveillance" button.
-- When motion is detected, you will receive an alert notification.
-- View captured footage in the logs section.
+- Grant storage,microphone and location permissions.
+- Start monitoring by clicking the "Start" button.
+- There are two options one for speed and one for frequency
+- You can detect either frequency or speed at a time.
+- You can select you orange and red level according to your need. 
+- When sound is detected, pop up video will open which will play until you close that window.
+- View videos in the logs section.
 
 ## Folder Structure
 
@@ -46,7 +49,8 @@ This is a **Flutter application** for a surveillance system that captures motion
 lib
 │
 ├── main.dart       # Entry point of the application
-...
+
+```
 
 ## License
 
@@ -59,7 +63,7 @@ Contributions are welcome! Please fork the repository and submit a pull request.
 ## Contact
 
 - **Developer:** Himanshu Mourya
-- **Email:** your-email@example.com
-- **GitHub:** [Your GitHub Profile](https://github.com/your-username)
+- **Email:** himanshumouryaa.2004@gmail.com
+- **GitHub:** [HIMANSHUMOURYADTU](https://github.com/HIMANSHUMOURYADTU)
 
 Feel free to modify or expand the app according to your needs!
