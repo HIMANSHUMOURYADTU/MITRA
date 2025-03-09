@@ -46,6 +46,7 @@ This is a **Flutter application** for a surveillance system that captures motion
 lib
 │
 ├── main.dart       # Entry point of the application
+...
 
 ## License
 
